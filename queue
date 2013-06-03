@@ -1,0 +1,153 @@
+jQuery.extend({
+        // 显示或操作在匹配元素上执行的函数队列
+        queue: function (elem, type, data) {
+            var queue;
+
+            if (elem) {
+                // type没定义的话就默认使用fxqueue
+                type = (type || 'fx') + 'queue';
+                // 先获取elem上的缓存数据
+                queue = jQuery._data(elem, type);
+
+                if (data) {
+                    // 如果没有缓存数据或者data是数组
+                    // 泽给elem设置缓存数据
+                    if (!queue || jQuery.isArray(data)) {
+                        queue = jQuery._data(elem, type, jQuery.makeArray(data));
+                    } else {
+                        // 否则存在缓存数据数组直接入栈
+                        queue.push(data);
+                    }
+                }
+                return queue || [];
+            }
+        },
+        // 从队列最前端移除一个队列函数，并执行它
+        dequeue: function (elem, type) {
+            type = type || 'fx';
+
+            var
+            // 获取缓存队列
+                queue = jQuery.queue(elem, type),
+                startLength = queue.length,
+            // 取得队列的第一个元素
+                fn = queue.shift(),
+            // 钩子对象，如果获取不到缓存的钩子对象，就设置新的钩子对象并返回
+                hooks = jQuery._queueHooks(elem, type),
+            // 递归
+                next = function () {
+                    jQuery.dequeue(elem, type);
+                };
+
+            // 如果第一个元素是"inprogress",取下一个元素，长度相应减1
+            if (fn === 'inprogress') {
+                fn = queue.shift();
+                startLength--;
+            }
+
+            // 为钩子对象添加cur方法
+            hooks.cur = fn;
+            // 如果此时fn不为null || false || undefined
+            if (fn) {
+                // 如果type为“fx”，给队列添加"inprogress",防止自动出列(dequeue)
+                if (type === 'fx') {
+                    queue.unshift('inprogress');
+                }
+
+                //删除上一个队列的stop函数
+                delete hooks.stop;
+                fn.call(elem, next, hooks);
+            }
+
+            // 如果队列长度为0且存在钩子对象，则删除缓存
+            if (!startLength && hooks) {
+                hooks.empty.fire();
+            }
+        },
+        // 私有方法，生成一个队列钩子对象（即从缓存数据中获取的队列钩子）
+        // 或者设置缓存队列钩子对象，这个对象的empty属性是一个Callbacks对象，这里的作用是删除缓存队列和缓存队列钩子的数据
+        _queueHooks: function (elem, type) {
+            var key = type + 'queueHooks';
+            return jQuery._data(elem, key) || jQuery._data(elem, key, {
+                empty: jQuery.Callbacks('once memory').add(function () {
+                    jQuery._removeData(elem, type + 'queue');
+                    jQuery._removeData(elem, key);
+                })
+            });
+        }
+    });
+
+    jQuery.fn.extend({
+        queue: function (type, data) {
+            var setter = 2;
+
+            if (typeof type !== 'string') {
+                data = type;
+                type = 'fx';
+                setter--;
+            }
+
+            if (arguments.length < setter) {
+                return jQuery.queue(this[0], type);
+            }
+
+            return data === undefined ?
+                this :
+                this.each(function () {
+                    var queue = jQuery.queue(this, type, data);
+
+                    jQuery._queueHooks(this, type);
+
+                    if (type === 'fx' && queue[0] !== 'inprogress') {
+                        jQuery.dequeue(this, type);
+                    }
+                });
+        },
+        dequeue: function (type) {
+            return this.each(function () {
+                jQuery.dequeue(this, type);
+            });
+        },
+        delay: function (time, type) {
+            time = jQuery.fx ? jQuery.fx.speeds[time] || time : time;
+            type = type || 'fx';
+
+            return this.queue(type, function (next, hooks) {
+                var timeout = setTimeout(next, time);
+                hooks.stop = function () {
+                    clearTimeout(timeout);
+                };
+            });
+        },
+        clearQueue: function (type) {
+            return this.queue(type || 'fx', []);
+        },
+        promise: function (type, obj) {
+            var tmp,
+                count = 1,
+                defer = jQuery.Deferred(),
+                elements = this,
+                i = this.length,
+                resolve = function () {
+                    if (!(--count)) {
+                        defer.resolveWith(elements, [elements]);
+                    }
+                };
+
+            if (typeof type !== 'string') {
+                obj = type;
+                type = undefined;
+            }
+            type = type || 'fx';
+
+            while (i--) {
+                tmp = jQuery._data(elements[i], type + 'queueHooks');
+                if (tmp && tmp.empty) {
+                    count++;
+                    tmp.empty.add(resolve);
+                }
+            }
+            resolve();
+            return defer.promise(obj);
+        }
+    });
