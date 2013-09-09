@@ -1,32 +1,38 @@
-// 匹配结尾是否有“{...}”或"[...]"
+ // 匹配结尾是否有“{...}”或"[...]"
     var rbrace = /(?:\{[\s\S]*\}|\[[\s\S]*\])$/,
-    // 匹配大写字母
+        // 匹配大写字母
         rmultiDash = /([A-Z])/g;
 
-    /*
-     内部用来设置/获取元素或对象的缓存方法
+    /**
+     * 内部用来设置/获取元素或对象的缓存方法
+     *
+     * @param elem DOM元素或者JS对象
+     * @param name 缓存的标识符key
+     * @param data 缓存数据
+     * @param {Boolean} pvt 当为true时表示是私有性的，jq内部使用的
      */
-    function internalData(elem, name, data, pvt /* Internal Use Only */) {
+
+    function internalData(elem, name, data, pvt /* Internal Use Only */ ) {
         // 判断该对象能不能绑定数据
         if (!jQuery.acceptData(elem)) {
             return;
         }
 
         var thisCache, ret,
-        // expando是jQuery生成的随机ID
+            // expando是jQuery生成的随机ID
             internalKey = jQuery.expando,
             getByName = typeof name === 'string',
-        // 我们不得不分别处理DOM元素和js对象，
-        // 因为ie6/7的垃圾回收不能正确处理对DOM元素的对象引用
+            // 我们不得不分别处理DOM元素和js对象，
+            // 因为ie6/7的垃圾回收不能正确处理对DOM元素的对象引用
             isNode = elem.nodeType,
-        // 只有DOM元素才需要全局jQuery.cache对象。
-        // js对象数据直接指向该对象，垃圾回收可以自动处理
+            // 只有DOM元素才需要全局jQuery.cache对象。
+            // js对象数据直接指向该对象，垃圾回收可以自动处理
             cache = isNode ? jQuery.cache : elem,
-        // 1. 如果是dom元素，返回dom元素通过expando对应的id（值可能为undefined）
-        // 2. 如果是普通js对象，分两种情况：
-        //    2.1 如果js对象存在通过expando对应的值，即代表有缓存数据，则立即返回expando作为id
-        //    2.2 如果没有对应值，则代表没有缓存数据，此时返回undefined
-        // 也就是说如果id不为空，那么肯定是有存储数据过的
+            // 1. 如果是dom元素，返回dom元素通过expando对应的id（值可能为undefined）
+            // 2. 如果是普通js对象，分两种情况：
+            //    2.1 如果js对象存在通过expando对应的值，即代表有缓存数据，则立即返回expando作为id
+            //    2.2 如果没有对应值，则代表没有缓存数据，此时返回undefined
+            // 也就是说如果id不为空，那么肯定是有存储数据过的
             id = isNode ? elem[internalKey] : elem[internalKey] && internalKey;
 
         // 当一个对象没有data的时候返回，避免多余工作
@@ -38,7 +44,7 @@
         if (!id) {
             // 如果是DOM元素，给该节点绑定一个属性ID
             if (isNode) {
-                elem[internalKey] = id = core_deleteIds.pop() || jQuery.guid++;
+                elem[internalKey] = id = core_deletedIds.pop() || jQuery.guid++;
             } else {
                 // 否则是对象则通过expando创建一个唯一ID
                 id = internalKey;
@@ -102,6 +108,14 @@
 
         return ret;
     }
+
+    /**
+     * 删除对应的缓存数据
+     *
+     * @param elem
+     * @param name
+     * @param pvt
+     */
 
     function internalRemoveData(elem, name, pvt) {
         if (!jQuery.acceptData(elem)) {
@@ -176,7 +190,7 @@
 
         // 如果是DOM元素，清除绑定在elem上的所有数据
         if (isNode) {
-            jQuery.clearData([elem], true);
+            jQuery.cleanData([elem], true);
         } else if (jQuery.support.deleteExpando || cache != cache.window) {
             // 如果支持删除绑定在对象上的expando属性或者cache非window对象
             // 只用delete就可以删除了
@@ -188,33 +202,37 @@
     }
 
     jQuery.extend({
+        // 当是DOM元素的时候，使用$.cache来缓存数据
         cache: {},
-        //
+        // 生成expando字符串
         expando: 'jQuery' + (core_version + Math.random()).replace(/\D/g, ''),
-        //
+        // 以下情况不需要缓存
         noData: {
             'embed': true,
             'object': 'clsid:D27CDB6E-AE6D-11cf-96B8-444553540000',
             'applet': true
         },
-        hasData: function (elem) {
-            elem = elem.nodeType ? jQuery.cache(elem[jQuery.expando]) : elem[jQuery.expando];
+        // 判断是否已有缓存数据
+        hasData: function(elem) {
+            elem = elem.nodeType ? jQuery.cache[elem[jQuery.expando]] : elem[jQuery.expando];
             return !!elem && !isEmptyDataObject(elem);
         },
         // 适配器模式
-        data: function (elem, name, data) {
+        data: function(elem, name, data) {
             return internalData(elem, name, data);
         },
-        removeData: function (elem, name) {
+        removeData: function(elem, name) {
             return internalRemoveData(elem, name);
         },
-        _data: function (elem, name, data) {
+        // 私有方法
+        _data: function(elem, name, data) {
             return internalData(elem, name, data, true);
         },
-        _removeData: function (elem, name) {
+        _removeData: function(elem, name) {
             return internalRemoveData(elem, name, true);
         },
-        acceptData: function (elem) {
+        // 判断元素或对象是否可以缓存
+        acceptData: function(elem) {
             if (elem.nodeType && elem.nodeType !== 1 && elem.nodeType !== 9) {
                 return false;
             }
@@ -226,10 +244,11 @@
     });
 
     jQuery.fn.extend({
-        data: function (key, value) {
+        data: function(key, value) {
             var attrs, name,
                 elem = this[0],
-                i = 0, data = null;
+                i = 0,
+                data = null;
 
             // 如果key为undefined，说明key和value都为空，获取缓存data
             if (key === undefined) {
@@ -272,13 +291,13 @@
             // 如果key是对象，直接将其拷贝到jQuery.cache.data缓存对象里
             // 用来设置多个值的情况
             if (typeof key === 'object') {
-                return this.each(function () {
+                return this.each(function() {
                     jQuery.data(this, key);
                 });
             }
 
             // 为每个元素执行函数后返回原始的元素集(this)
-            return jQuery.access(this, function (value) {
+            return jQuery.access(this, function(value) {
                 if (value === undefined) {
                     // 如果value未定义并且在jQuery.cache缓存中没有找到相应key的缓存，
                     // 然后再试图查看HTML5标签的“data-”属性是否被解析过了
@@ -286,14 +305,15 @@
                 }
             }, null, value, arguments.length > 1, null, true);
         },
-        removeData: function (key) {
-            return this.each(function () {
+        removeData: function(key) {
+            return this.each(function() {
                 jQuery.removeData(this, key);
             });
         }
     });
 
     // 处理元素节点中使用HTML5的“data-test”属性，并将其转换到相应的类型存储到jQuery.cache对象中
+
     function dataAttr(elem, key, data) {
         // 如果data为空且elem是元素节点，那么将HTML5的data-属性值转换为相应的类型
         if (data === undefined && elem.nodeType === 1) {
@@ -308,17 +328,16 @@
                     // 布尔型
                     data = data === 'true' ? true :
                         data === 'false' ? false :
-                            // null
-                            data === 'null' ? null :
-                                // +data只会将数字字符转换成数字,再加上""则会转换回字符串
-                                // 这里是测试是否为数字
-                                +data + '' === data ? +data :
-                                    // 数组或对象，并转换
-                                    rbrace.test(data) ? jQuery.parseJSON(data) :
-                                        // 其他类型
-                                        data;
-                } catch (e) {
-                }
+                    // null
+                    data === 'null' ? null :
+                    // +data只会将数字字符转换成数字,再加上""则会转换回字符串
+                    // 这里是测试是否为数字
+                    +data + '' === data ? +data :
+                    // 数组或对象，并转换
+                    rbrace.test(data) ? jQuery.parseJSON(data) :
+                    // 其他类型
+                    data;
+                } catch (e) {}
 
                 // 将格式化的数据存在jQuery.cache缓存。
                 jQuery.data(elem, key, data);
@@ -333,6 +352,7 @@
     }
 
     // 检查缓存对象的数据是否为空
+
     function isEmptyDataObject(obj) {
         var name;
         for (name in obj) {
