@@ -5,9 +5,10 @@ var optionsCache = {};
      并且返回一个object变量存储已经存在的key参数，且value值为true,
      与optionsCache引用同一个对象
      */
+
     function createOptions(options) {
         var object = optionsCache[options] = {};
-        jQuery.each(options.match(core_rnotwhite) || [], function (_, flag) {
+        jQuery.each(options.match(core_rnotwhite) || [], function(_, flag) {
             object[flag] = true;
         });
         return object;
@@ -16,7 +17,7 @@ var optionsCache = {};
     /*
      * Create a callback list using the following parameters:
      *
-     *  options: an optional list of space-separated options that will change how
+     *	options: an optional list of space-separated options that will change how
      *			the callback list behaves or a more traditional option object
      *
      * By default a callback list will act like an event callback list and can be
@@ -25,18 +26,18 @@ var optionsCache = {};
      * Possible options:
      *
      *	once:			will ensure the callback list can only be fired once (like a Deferred)
-     *	确保这个回调列表只执行一次(像一个递延 Deferred).
+     *	确保这个回调列表只执行一次.
      *
      *	memory:			will keep track of previous values and will call any callback added after the list has been fired right away with the latest "memorized" values (like a Deferred)
-     * 保持以前的值和将添加到这个列表的后面的最新的值立即执行调用任何回调 (像一个递延 Deferred).
+     * 当回调列表已经被触发调用了，我们再给列表添加回调的时候将会执行该回调
      *
      *	unique:			will ensure a callback can only be added once (no duplicate in the list)
-     * 确保一次只能添加一个回调(所以有没有在列表中的重复).
+     * 确保一个回调再列表中只会被添加一次(即列表不能有重复的回调).
      *
      *	stopOnFalse:	interrupt callings when a callback returns false
      * 当一个回调返回false 时中断调用
      */
-    jQuery.Callbacks = function (options) {
+    jQuery.Callbacks = function(options) {
         // 将options字符串格式转换为对象格式
         // 先检查是否已有缓存
         options = typeof options === 'string' ?
@@ -45,26 +46,28 @@ var optionsCache = {};
 
         var
         // 用来标识列表是否正在触发
-            firing,
-        // 上一次触发的值 （备忘列表）
+        firing,
+            // 上一次触发的值 （备忘列表）
             memory,
-        // 列表已被触发的标识
+            // 列表已被触发的标识
             fired,
-        // 回调列表的长度
+            // 回调列表的长度
             firingLength,
-        // 当前触发的回调索引值
+            // 当前触发的回调索引值
             firingIndex,
-        // 第一个要触发的回调函数
-        // (used internally by add and fireWith)
+            // 第一个要触发的回调函数
+            // (used internally by add and fireWith)
             firingStart,
-        // 回调列表
+            // 回调列表
             list = [],
-        // 可重复的回调函数堆栈，用于控制触发回调时的参数列表
+            // 可重复的回调函数堆栈，用于控制触发回调时的参数列表
+            // flags不能为once
             stack = !options.once && [],
-        // 触发回调方法，结束了当前队列，
-        // 如果还有其他等待队列，则也触发
-            fire = function (data) {
-                // 如果参数memory为true，则记录data
+            // 触发回调方法，结束了当前队列，
+            // 如果还有其他等待队列，则也触发
+            fire = function(data) {
+                // 如果flags包含memory，则记录data
+                // 值是一个数组第一个元素是fireWith的context对象，第二个则是fire方法的参数伪数组
                 memory = options.memory && data;
                 // 标记已触发
                 fired = true;
@@ -73,8 +76,10 @@ var optionsCache = {};
                 firingLength = list.length;
                 // 标记正在触发回调
                 firing = true;
+                // 遍历回调列表
                 for (; list && firingIndex < firingLength; firingIndex++) {
                     if (list[firingIndex].apply(data[0], data[1]) === false && options.stopOnFalse) {
+                        // 强制将memory设置为false
                         // 阻止未来可能由于add所产生的回调
                         memory = false;
                         //由于参数stopOnFalse为true，所以当有回调函数返回值为false时退出循环
@@ -104,19 +109,19 @@ var optionsCache = {};
                     }
                 }
             },
-        // 暴露在外的Callbacks对象
+            // 暴露在外的Callbacks对象
             self = {
                 /**
                  * 回调列表中添加一个回调或回调的集合。
                  * {arguments} 一个函数，或者一个函数数组用来添加到回调列表
                  * @returns {*}
                  */
-                add: function () {
+                add: function() {
                     if (list) {
                         // 首先存储当前列表长度
                         var start = list.length;
                         (function add(args) {
-                            jQuery.each(args, function (_, arg) {
+                            jQuery.each(args, function(_, arg) {
                                 var type = jQuery.type(arg);
                                 // 如果是函数
                                 if (type === 'function') {
@@ -150,9 +155,9 @@ var optionsCache = {};
                 /*
                  删除回调或回调回调列表的集合
                  */
-                remove: function () {
+                remove: function() {
                     if (list) {
-                        jQuery.each(arguments, function (_, arg) {
+                        jQuery.each(arguments, function(_, arg) {
                             var index;
                             // 找到arg在列表中的位置
                             while ((index = jQuery.inArray(arg, list, index)) > -1) {
@@ -176,34 +181,34 @@ var optionsCache = {};
                     return this;
                 },
                 // 回调函数是否在列表中
-                has: function (fn) {
-                    return fn ? jQuery.inArray(fn, list) > -1 : !!(list && list.length);
+                has: function(fn) {
+                    return fn ? jQuery.inArray(fn, list) > -1 : !! (list && list.length);
                 },
                 // 从列表中删除所有回调函数
-                empty: function () {
+                empty: function() {
                     list = [];
                     return this;
                 },
                 /*
                  禁用回调列表中的回调
                  */
-                disable: function () {
+                disable: function() {
                     list = stack = memory = undefined;
                     return this;
                 },
                 // 判断是否被禁用了
-                disabled: function () {
+                disabled: function() {
                     return !list;
                 },
                 // 锁定列表
-                lock: function () {
+                lock: function() {
                     stack = undefined;
                     if (!memory) {
                         self.disable();
                     }
                     return this;
                 },
-                locked: function () {
+                locked: function() {
                     return !stack;
                 },
                 /**
@@ -212,7 +217,7 @@ var optionsCache = {};
                  * @param args
                  * @returns {*}
                  */
-                fireWith: function (context, args) {
+                fireWith: function(context, args) {
                     args = args || [];
                     args = [context, args.slice ? args.slice() : args];
 
@@ -231,12 +236,12 @@ var optionsCache = {};
                     return this;
                 },
                 // 以给定的参数调用所有回调函数
-                fire: function () {
+                fire: function() {
                     self.fireWith(this, arguments);
                     return this;
                 },
                 // 回调列表是否被触发过
-                fired: function () {
+                fired: function() {
                     return !!fired;
                 }
             };
