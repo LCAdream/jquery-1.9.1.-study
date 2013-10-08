@@ -119,7 +119,7 @@
                     if (match[1]) {
                         context = context instanceof jQuery ? context[0] : context;
 
-                        // 生成临时DOM片段并合并到this实例化对象中
+                        // 向后兼容
                         jQuery.merge(this, jQuery.parseHTML(
                             match[1],
                             context && context.nodeType ? context.ownerDocument || context : document,
@@ -403,7 +403,6 @@
             }
 
             // If there are functions bound, to execute
-            // 触发成功回调列表（readyList是一个deferred对象）
             readyList.resolveWith(document, [jQuery]);
 
             // Trigger any bound ready events
@@ -1894,7 +1893,7 @@
             elem = elem.nodeType ? jQuery.cache[elem[jQuery.expando]] : elem[jQuery.expando];
             return !!elem && !isEmptyDataObject(elem);
         },
-        // 适配器模式
+        // 桥接模式
         data: function(elem, name, data) {
             return internalData(elem, name, data);
         },
@@ -1980,6 +1979,11 @@
                     // 然后再试图查看HTML5标签的“data-”属性是否被解析过了
                     return elem ? dataAttr(elem, key, jQuery.data(elem, key)) : null;
                 }
+
+                // 否则，遍历元素， 给相应元素设置缓存
+                this.each(function() {
+                    jQuery.data(this, key, value);
+                });
             }, null, value, arguments.length > 1, null, true);
         },
         removeData: function(key) {
@@ -7499,6 +7503,19 @@
             jQuery.cssHooks[prefix + suffix].set = setPositiveNumber;
         }
     });
+
+    jQuery.each(("blur focus focusin focusout load resize scroll unload click dblclick " + "mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave " + "change select submit keydown keypress keyup error contextmenu").split(" "), function(i, name) {
+
+        // Handle event binding
+        jQuery.fn[name] = function(data, fn) {
+            return arguments.length > 0 ? this.on(name, null, data, fn) : this.trigger(name);
+        };
+    });
+
+    jQuery.fn.hover = function(fnOver, fnOut) {
+        return this.mouseenter(fnOver).mouseleave(fnOut || fnOver);
+    };
+
     var r20 = /%20/g,
         rbracket = /\[\]$/,
         rCRLF = /\r?\n/g,
@@ -7605,17 +7622,7 @@
         }
     }
 
-    jQuery.each(("blur focus focusin focusout load resize scroll unload click dblclick " + "mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave " + "change select submit keydown keypress keyup error contextmenu").split(" "), function(i, name) {
-
-        // Handle event binding
-        jQuery.fn[name] = function(data, fn) {
-            return arguments.length > 0 ? this.on(name, null, data, fn) : this.trigger(name);
-        };
-    });
-
-    jQuery.fn.hover = function(fnOver, fnOut) {
-        return this.mouseenter(fnOver).mouseleave(fnOut || fnOver);
-    };
+    
 
     var
     // Document location
@@ -9117,7 +9124,10 @@
         });
     }
 
-    var fxNow, timerId, rfxtypes = /^(?:toggle|show|hide)$/,
+    var fxNow,
+        // 使用一个ID来执行动画setInterval 
+        timerId,
+        rfxtypes = /^(?:toggle|show|hide)$/,
         // eg: +=30.5px
         // 执行exec匹配["+=30.5px", "+", "30.5", "px"]
         rfxnum = new RegExp('^(?:([+-])=|)(' + core_pnum + ')([a-z%]*)$', 'i'),
@@ -9125,11 +9135,16 @@
         rrun = /queueHooks$/,
         animationPrefilters = [defaultPrefilter],
         tweeners = {
+            // 在动画前再次对动画参数做调整
             '*': [
                 function(prop, value) {
-                    var end, unit, tween = this.createTween(prop, value),
+                    var end, unit,
+                        // this指向animation对象
+                        // 返回一个Tween构造函数实例
+                        tween = this.createTween(prop, value),
                         // eg:["+=30.5px", "+", "30.5", "px"]
                         parts = rfxnum.exec(value),
+                        // 计算当前属性样式值
                         target = tween.cur(),
                         start = +target || 0,
                         scale = 1,
@@ -9187,7 +9202,7 @@
     }
 
     function createTweens(animation, props) {
-        // 遍历props数组
+        // 遍历props动画属性对象，并执行回调
         jQuery.each(props, function(prop, value) {
             // 如果tweeners[prop]数组存在，将它和tweeners['*']连接
             var collection = (tweeners[prop] || []).concat(tweeners['*']),
@@ -9208,44 +9223,65 @@
     function Animation(elem, properties, options) {
         var result, stopped, index = 0,
             length = animationPrefilters.length,
+            // deferred无论成功还是失败都会删除elem元素
             deferred = jQuery.Deferred().always(function() {
                 // don't match elem in the :animated selector
+                // 在“:animated”选择器中不会匹配到它们
                 delete tick.elem;
             }),
             tick = function() {
                 if (stopped) {
                     return false;
                 }
-                var currentTime = fxNow || createFxNow(),
+                var // 计算当前动画时间戳
+                    currentTime = fxNow || createFxNow(),
+                    // 结束时间减当前时间，计算出剩余时间
                     remaining = Math.max(0, animation.startTime + animation.duration - currentTime),
                     // archaic crash bug won't allow us to use 1 - ( 0.5 || 0 ) (#12497)
+                    // 剩余时间百分比
                     temp = remaining / animation.duration || 0,
+                    // 已执行百分比
                     percent = 1 - temp,
                     index = 0,
+                    // 动画属性对应的tweens
                     length = animation.tweens.length;
 
+                // 遍历tweens，并执行对应的run方法，将已执行百分比通过传参传入
+                // run方法通过缓动算法计算出样式值，然后应用到元素上
                 for (; index < length; index++) {
                     animation.tweens[index].run(percent);
                 }
 
+                // 触发notify回调列表
                 deferred.notifyWith(elem, [animation, percent, remaining]);
 
+                // 如果执行进度为完成且tweens数组有元素
+                // 返回剩余时间
                 if (percent < 1 && length) {
                     return remaining;
                 } else {
+                    // 否则表示已完成，触发resolve回调列表，
+                    // 并返回false值
                     deferred.resolveWith(elem, [animation]);
                     return false;
                 }
             },
             animation = deferred.promise({
+                // 动画元素
                 elem: elem,
+                // 需要动画的属性
                 props: jQuery.extend({}, properties),
+                // 给optall添加specialEasing属性对象
                 opts: jQuery.extend(true, {
                     specialEasing: {}
                 }, options),
+                // 原始动画属性
                 originalProperties: properties,
+                // 原始的配置项optall
                 originalOptions: options,
+                // 动画开始时间，使用当前时间的毫秒数
                 startTime: fxNow || createFxNow(),
+                // 动画时长
                 duration: options.duration,
                 tweens: [],
                 createTween: function(prop, end) {
@@ -9278,10 +9314,17 @@
             }),
             props = animation.props;
 
+        /*
+        将是动画属性转换成驼峰式，并设置其相应的缓动属性，
+        如果存在cssHooks钩子对象，则需要另作一番处理
+         */
         propFilter(props, animation.opts.specialEasing);
 
+        // 遍历动画预过滤器，并执行回调
+        // 其中defaultPrefilter为默认预过滤器，每次都会执行
         for (; index < length; index++) {
             result = animationPrefilters[index].call(animation, elem, props, animation.opts);
+            // 如果有返回值，退出函数
             if (result) {
                 return result;
             }
@@ -9293,6 +9336,7 @@
             animation.opts.start.call(elem, animation);
         }
 
+        // 开始执行动画
         jQuery.fx.timer(
             jQuery.extend(tick, {
                 elem: elem,
@@ -9304,38 +9348,63 @@
         return animation.progress(animation.opts.progress).done(animation.opts.done, animation.opts.complete).fail(animation.opts.fail).always(animation.opts.always);
     }
 
+    /**
+     * 动画属性调整与过滤
+     * 
+     * 将是动画属性转换成驼峰式，并设置其相应的缓动属性，
+     * 如果存在cssHooks钩子对象，则需要另作一番处理
+     * @param  {[type]} props         [需要动画的属性]
+     * @param  {[type]} specialEasing [description]
+     * @return {[type]}               [description]
+     */
     function propFilter(props, specialEasing) {
         var value, name, index, easing, hooks;
 
         // camelCase, specialEasing and expand cssHook pass
         for (index in props) {
+            // 驼峰化属性
             name = jQuery.camelCase(index);
+            // TODO
             easing = specialEasing[name];
+            // 属性值
             value = props[index];
+            // 如果属性值是数组
             if (jQuery.isArray(value)) {
                 easing = value[1];
+                // 取数组第一个元素为属性值
                 value = props[index] = value[0];
             }
 
+            // 如果属性名精过驼峰化后，删除原有的属性名，减少占用内存
             if (index !== name) {
                 props[name] = value;
                 delete props[index];
             }
 
+            // 处理兼容性的钩子对象
             hooks = jQuery.cssHooks[name];
+            // 如果存在钩子对象且有expand属性
             if (hooks && "expand" in hooks) {
+                // 返回expand处理后的value值
+                // 该类型是一个对象，属性是
+                // (margin|padding|borderWidth)(Top|Right|Bottom|Left)
                 value = hooks.expand(value);
+
+                // 我们已经不需要name属性了
                 delete props[name];
 
                 // not quite $.extend, this wont overwrite keys already present.
                 // also - reusing 'index' from above because we have the correct "name"
                 for (index in value) {
+                    // 如果props没有(margin|padding|borderWidth)(Top|Right|Bottom|Left)属性
+                    // 添加该属性和对应的值，并设置缓动属性
                     if (!(index in props)) {
                         props[index] = value[index];
                         specialEasing[index] = easing;
                     }
                 }
             } else {
+                // 没有钩子对象就直接设置其为缓动属性
                 specialEasing[name] = easing;
             }
         }
@@ -9360,7 +9429,7 @@
                 tweeners[prop].unshift(callback);
             }
         },
-
+        // 为animationPrefilters回调数组添加回调
         prefilter: function(callback, prepend) {
             if (prepend) {
                 animationPrefilters.unshift(callback);
@@ -9370,8 +9439,19 @@
         }
     });
 
+    /**
+     * 动画预处理
+     * 添加fx队列缓存（没有的话），对动画属性“width/height，overflow”， 值有“toggle/show/hide”采取的一些措施
+     * 
+     * @param  {[type]} elem  [动画元素]
+     * @param  {[type]} props [动画属性]
+     * @param  {[type]} opts  [动画配置项]
+     * @return {[type]}       [description]
+     */
     function defaultPrefilter(elem, props, opts) { /*jshint validthis:true */
-        var prop, index, length, value, dataShow, toggle, tween, hooks, oldfire, anim = this,
+        var prop, index, length, value, dataShow, toggle, tween, hooks, oldfire,
+            // animation对象（同时是个deferred对象）
+            anim = this,
             style = elem.style,
             orig = {},
             handled = [],
@@ -9379,11 +9459,17 @@
 
         // handle queue: false promises
         if (!opts.queue) {
+            // 获取或者设置动画队列钩子
             hooks = jQuery._queueHooks(elem, "fx");
+            // 如果hooks.unqueued为null/undefined
             if (hooks.unqueued == null) {
                 hooks.unqueued = 0;
+                // 获取旧的empty回调对象
+                // 用于清除动画队列缓存
                 oldfire = hooks.empty.fire;
+                // 装饰，添加新的职责
                 hooks.empty.fire = function() {
+                    // 当hooks.unqueued为0时执行清除动画队列缓存
                     if (!hooks.unqueued) {
                         oldfire();
                     }
@@ -9394,8 +9480,10 @@
             anim.always(function() {
                 // doing this makes sure that the complete handler will be called
                 // before this completes
+                // 延迟处理，确保该回调完成才调用下面回调
                 anim.always(function() {
                     hooks.unqueued--;
+                    // 如果动画队列没有元素了，清空缓存
                     if (!jQuery.queue(elem, "fx").length) {
                         hooks.empty.fire();
                     }
@@ -9404,15 +9492,19 @@
         }
 
         // height/width overflow pass
+        // 对width或height的DOM元素的动画前的处理
         if (elem.nodeType === 1 && ("height" in props || "width" in props)) {
             // Make sure that nothing sneaks out
             // Record all 3 overflow attributes because IE does not
             // change the overflow attribute when overflowX and
             // overflowY are set to the same value
+            // IE不会改变overflow属性当iverflowX和overflowY的值相同时。
+            // 因此我们要记录三个overflow的属性
             opts.overflow = [style.overflow, style.overflowX, style.overflowY];
 
             // Set display property to inline-block for height/width
             // animations on inline elements that are having width/height animated
+            // 将inline元素（非浮动的）设置为inline-block或者BFC(iE6/7)，使它们的width和height可改变
             if (jQuery.css(elem, "display") === "inline" && jQuery.css(elem, "float") === "none") {
 
                 // inline-level elements accept inline-block;
@@ -9428,6 +9520,8 @@
 
         if (opts.overflow) {
             style.overflow = "hidden";
+            // 如果不支持父元素随着子元素宽度改变而改变
+            // 动画结束后将style设置为初始状态
             if (!jQuery.support.shrinkWrapBlocks) {
                 anim.always(function() {
                     style.overflow = opts.overflow[0];
@@ -9439,36 +9533,51 @@
 
 
         // show/hide pass
+        // 遍历动画属性
         for (index in props) {
+            // 获取目标值
             value = props[index];
+            // 判断值是否有toggle|show|hide
             if (rfxtypes.exec(value)) {
                 delete props[index];
+                // 是否需要toggle
                 toggle = toggle || value === "toggle";
+                // 如果hide（或者show）状态的初始值和我们动画的值相同，就不需要做处理
                 if (value === (hidden ? "hide" : "show")) {
                     continue;
                 }
+                // 将需要show/hide/toggle的属性保存到handled数组中
                 handled.push(index);
             }
         }
 
         length = handled.length;
+        // 如果handled数组有元素
+        // 对需要toggle|show|hide的属性处理
         if (length) {
+            // 获取或者设置元素的fxshow缓存（保存显示状态）
             dataShow = jQuery._data(elem, "fxshow") || jQuery._data(elem, "fxshow", {});
+            // 如果元素已经有hidden属性，说明我们设置过了，
+            // 取该值
             if ("hidden" in dataShow) {
                 hidden = dataShow.hidden;
             }
 
             // store state if its toggle - enables .stop().toggle() to "reverse"
+            // 如果需要toggle，将hidden状态取反
             if (toggle) {
                 dataShow.hidden = !hidden;
             }
+            // 如果元素隐藏了就显示出来，为了后期的动画
             if (hidden) {
                 jQuery(elem).show();
             } else {
+                // 否则动画结束后才隐藏
                 anim.done(function() {
                     jQuery(elem).hide();
                 });
             }
+            // 动画结束后删除fxshow缓存，并恢复元素原始样式
             anim.done(function() {
                 var prop;
                 jQuery._removeData(elem, "fxshow");
@@ -9478,10 +9587,14 @@
             });
             for (index = 0; index < length; index++) {
                 prop = handled[index];
+                // 创建Tween实例
                 tween = anim.createTween(prop, hidden ? dataShow[prop] : 0);
+                // 获取元素原始样式值
                 orig[prop] = dataShow[prop] || jQuery.style(elem, prop);
 
+                // 如果dataShow引用的缓存没有show|hide|toggle属性
                 if (!(prop in dataShow)) {
+                    // 添加该属性，并赋初值
                     dataShow[prop] = tween.start;
                     if (hidden) {
                         tween.end = tween.start;
@@ -9492,6 +9605,8 @@
         }
     }
 
+    // 实例化init构造函数
+    // 对单个动画属性，在初始化的时候计算开始值
     function Tween(elem, options, prop, end, easing) {
         return new Tween.prototype.init(elem, options, prop, end, easing);
     }
@@ -9513,21 +9628,26 @@
 
             return hooks && hooks.get ? hooks.get(this) : Tween.propHooks._default.get(this);
         },
+        // 通过缓动算法计算出样式值，然后应用到元素上
         run: function(percent) {
             var eased, hooks = Tween.propHooks[this.prop];
 
+            // 当前执行位置，
+            // 如果有时长，就用缓动算法
             if (this.options.duration) {
                 this.pos = eased = jQuery.easing[this.easing](
                     percent, this.options.duration * percent, 0, 1, this.options.duration);
             } else {
                 this.pos = eased = percent;
             }
+            // 当前时间戳
             this.now = (this.end - this.start) * eased + this.start;
 
             if (this.options.step) {
                 this.options.step.call(this.elem, this.now, this);
             }
 
+            // 有钩子对象就执行set方法，否则使用默认set方法
             if (hooks && hooks.set) {
                 hooks.set(this);
             } else {
@@ -9541,6 +9661,7 @@
 
     Tween.propHooks = {
         _default: {
+            // 默认的获取样式初始值方法
             get: function(tween) {
                 var result;
 
@@ -9556,6 +9677,7 @@
                 // Empty strings, null, undefined and "auto" are converted to 0.
                 return !result || result === "auto" ? 0 : result;
             },
+            // 设置元素样式
             set: function(tween) {
                 // use step hook for back compat - use cssHook if its there - use .style if its
                 // available and use plain properties where available
@@ -9617,14 +9739,15 @@
                 };
             doAnimation.finish = doAnimation;
 
-            return 
-                // 如果prop为空对象或者前面没有队列，
+                // 如果prop为空对象或者queue为false(即不进行动画队列)，
                 // 遍历元素集并执行doAnimation回调
-                empty || optall.queue === false ? this.each(doAnimation) :
-                // 否则prop不为空且前面有队列，
+            return empty || optall.queue === false ? this.each(doAnimation) :
+                // 否则prop不为空且需要队列执行，
                 // 将doAnimation添加到该元素的队列中
+                // jQuery.queue('fx', doAnimation)
                 this.queue(optall.queue, doAnimation);
         },
+        // 停止所有在指定元素上正在运行的动画。
         stop: function(type, clearQueue, gotoEnd) {
             var stopQueue = function(hooks) {
                 var stop = hooks.stop;
@@ -9718,9 +9841,15 @@
     });
 
     // Generate parameters to create a standard animation
-
+    /**
+     * 用于填充slideDown/slideUp/slideToggle动画参数
+     * @param  {[String]} type         [show/hide/toggle]
+     * @param  {[type]} includeWidth [是否需要包含宽度]
+     * @return {[type]}              [description]
+     */
     function genFx(type, includeWidth) {
-        var which, attrs = {
+        var which,
+            attrs = {
                 height: type
             },
             i = 0;
@@ -9728,6 +9857,8 @@
         // if we include width, step value is 1 to do all cssExpand values,
         // if we don't include width, step value is 2 to skip over Left and Right
         includeWidth = includeWidth ? 1 : 0;
+        // 不包含宽度，which就取“Top/Bottom”，
+        // 否则“Left/Right”
         for (; i < 4; i += 2 - includeWidth) {
             which = cssExpand[i];
             attrs["margin" + which] = attrs["padding" + which] = type;
@@ -9760,11 +9891,20 @@
         };
     });
 
+    /**
+     * 配置动画参数
+     * 
+     * 配置动画时长，动画结束回调（经装饰了），缓动算法，queue属性用来标识是动画队列
+     * @param  {[Number|Objecct]}   speed  [动画时长]
+     * @param  {[Function]}   easing [缓动算法]
+     * @param  {Function} fn     [动画结束会掉]
+     * @return {[Object]}          [description]
+     */
     jQuery.speed = function(speed, easing, fn) {
         var opt =
             // speed是否为对象
             speed && typeof speed === "object" ?
-            // 如果是克隆speed对象
+            // 如果是，克隆speed对象
             jQuery.extend({}, speed) :
             // 否则返回一个新的对象
             {
@@ -9782,11 +9922,11 @@
 
         opt.duration =
             // jQuery.fx.off是否为真，如果是则将opt.duration设置为0，
-            // 这将会停止动画
+            // 这将会停止所有动画
             jQuery.fx.off ? 0 :
             // 否则判断duration属性值是否为数字类型，是则使用 
             typeof opt.duration === "number" ? opt.duration :
-            // 否则判断duration属性值字符串是否在jQuery.fx.speeds属性key字段中，是则使用 
+            // 否则判断duration属性值字符串是否在jQuery.fx.speeds(jQuery的预配置动画时长)属性key字段中，是则使用 
             opt.duration in jQuery.fx.speeds ? jQuery.fx.speeds[opt.duration] :
             // 否则就是用默认动画时长
             jQuery.fx.speeds._default;
@@ -9832,28 +9972,40 @@
         }
     };
 
+    // 全局timers数组，保存着所有动画tick
     jQuery.timers = [];
     jQuery.fx = Tween.prototype.init;
+    // setInterval回调
     jQuery.fx.tick = function() {
         var timer, timers = jQuery.timers,
             i = 0;
 
         fxNow = jQuery.now();
 
+        // 遍历所有tick
         for (; i < timers.length; i++) {
             timer = timers[i];
             // Checks the timer has not already been removed
+            // 如果当前tick返回的为假（经弱转换）
+            // 移除该tick
+            // 然后继续遍历当前项，因为数组长度被改变了
             if (!timer() && timers[i] === timer) {
                 timers.splice(i--, 1);
             }
         }
 
+        // 如果没有tick回调了，停止定时器
         if (!timers.length) {
             jQuery.fx.stop();
         }
         fxNow = undefined;
     };
 
+    /**
+     * 
+     * 
+     * @param  {Object} timer tick回调
+     */
     jQuery.fx.timer = function(timer) {
         if (timer() && jQuery.timers.push(timer)) {
             jQuery.fx.start();
@@ -9862,8 +10014,10 @@
 
     jQuery.fx.interval = 13;
 
+    // 动画正式开始
     jQuery.fx.start = function() {
         if (!timerId) {
+            // 间隔执行jQuery.fx.tick
             timerId = setInterval(jQuery.fx.tick, jQuery.fx.interval);
         }
     };
@@ -9891,6 +10045,237 @@
         };
     }
 
+    jQuery.fn.offset = function(options) {
+        if (arguments.length) {
+            return options === undefined ? this : this.each(function(i) {
+                jQuery.offset.setOffset(this, options, i);
+            });
+        }
+
+        var docElem, win, box = {
+                top: 0,
+                left: 0
+            },
+            elem = this[0],
+            doc = elem && elem.ownerDocument;
+
+        if (!doc) {
+            return;
+        }
+
+        docElem = doc.documentElement;
+
+        // Make sure it's not a disconnected DOM node
+        if (!jQuery.contains(docElem, elem)) {
+            return box;
+        }
+
+        // If we don't have gBCR, just use 0,0 rather than error
+        // BlackBerry 5, iOS 3 (original iPhone)
+        if (typeof elem.getBoundingClientRect !== core_strundefined) {
+            box = elem.getBoundingClientRect();
+        }
+        win = getWindow(doc);
+        return {
+            top: box.top + (win.pageYOffset || docElem.scrollTop) - (docElem.clientTop || 0),
+            left: box.left + (win.pageXOffset || docElem.scrollLeft) - (docElem.clientLeft || 0)
+        };
+    };
+
+    jQuery.offset = {
+
+        setOffset: function(elem, options, i) {
+            var position = jQuery.css(elem, "position");
+
+            // set position first, in-case top/left are set even on static elem
+            if (position === "static") {
+                elem.style.position = "relative";
+            }
+
+            var curElem = jQuery(elem),
+                curOffset = curElem.offset(),
+                curCSSTop = jQuery.css(elem, "top"),
+                curCSSLeft = jQuery.css(elem, "left"),
+                calculatePosition = (position === "absolute" || position === "fixed") && jQuery.inArray("auto", [curCSSTop, curCSSLeft]) > -1,
+                props = {},
+                curPosition = {},
+                curTop, curLeft;
+
+            // need to be able to calculate position if either top or left is auto and position is either absolute or fixed
+            if (calculatePosition) {
+                curPosition = curElem.position();
+                curTop = curPosition.top;
+                curLeft = curPosition.left;
+            } else {
+                curTop = parseFloat(curCSSTop) || 0;
+                curLeft = parseFloat(curCSSLeft) || 0;
+            }
+
+            if (jQuery.isFunction(options)) {
+                options = options.call(elem, i, curOffset);
+            }
+
+            if (options.top != null) {
+                props.top = (options.top - curOffset.top) + curTop;
+            }
+            if (options.left != null) {
+                props.left = (options.left - curOffset.left) + curLeft;
+            }
+
+            if ("using" in options) {
+                options.using.call(elem, props);
+            } else {
+                curElem.css(props);
+            }
+        }
+    };
+
+
+    jQuery.fn.extend({
+
+        position: function() {
+            if (!this[0]) {
+                return;
+            }
+
+            var offsetParent, offset, parentOffset = {
+                    top: 0,
+                    left: 0
+                },
+                elem = this[0];
+
+            // fixed elements are offset from window (parentOffset = {top:0, left: 0}, because it is it's only offset parent
+            if (jQuery.css(elem, "position") === "fixed") {
+                // we assume that getBoundingClientRect is available when computed position is fixed
+                offset = elem.getBoundingClientRect();
+            } else {
+                // Get *real* offsetParent
+                offsetParent = this.offsetParent();
+
+                // Get correct offsets
+                offset = this.offset();
+                if (!jQuery.nodeName(offsetParent[0], "html")) {
+                    parentOffset = offsetParent.offset();
+                }
+
+                // Add offsetParent borders
+                parentOffset.top += jQuery.css(offsetParent[0], "borderTopWidth", true);
+                parentOffset.left += jQuery.css(offsetParent[0], "borderLeftWidth", true);
+            }
+
+            // Subtract parent offsets and element margins
+            // note: when an element has margin: auto the offsetLeft and marginLeft
+            // are the same in Safari causing offset.left to incorrectly be 0
+            return {
+                top: offset.top - parentOffset.top - jQuery.css(elem, "marginTop", true),
+                left: offset.left - parentOffset.left - jQuery.css(elem, "marginLeft", true)
+            };
+        },
+
+        offsetParent: function() {
+            return this.map(function() {
+                var offsetParent = this.offsetParent || document.documentElement;
+                while (offsetParent && (!jQuery.nodeName(offsetParent, "html") && jQuery.css(offsetParent, "position") === "static")) {
+                    offsetParent = offsetParent.offsetParent;
+                }
+                return offsetParent || document.documentElement;
+            });
+        }
+    });
+
+
+    // Create scrollLeft and scrollTop methods
+    jQuery.each({
+        scrollLeft: "pageXOffset",
+        scrollTop: "pageYOffset"
+    }, function(method, prop) {
+        var top = /Y/.test(prop);
+
+        jQuery.fn[method] = function(val) {
+            return jQuery.access(this, function(elem, method, val) {
+                var win = getWindow(elem);
+
+                if (val === undefined) {
+                    return win ? (prop in win) ? win[prop] : win.document.documentElement[method] : elem[method];
+                }
+
+                if (win) {
+                    win.scrollTo(!top ? val : jQuery(win).scrollLeft(), top ? val : jQuery(win).scrollTop());
+
+                } else {
+                    elem[method] = val;
+                }
+            }, method, val, arguments.length, null);
+        };
+    });
+
+    function getWindow(elem) {
+        return jQuery.isWindow(elem) ? elem : elem.nodeType === 9 ? elem.defaultView || elem.parentWindow : false;
+    }
+    // Create innerHeight, innerWidth, height, width, outerHeight and outerWidth methods
+    jQuery.each({
+        Height: "height",
+        Width: "width"
+    }, function(name, type) {
+        jQuery.each({
+            padding: "inner" + name,
+            content: type,
+            "": "outer" + name
+        }, function(defaultExtra, funcName) {
+            // margin is only for outerHeight, outerWidth
+            jQuery.fn[funcName] = function(margin, value) {
+                var chainable = arguments.length && (defaultExtra || typeof margin !== "boolean"),
+                    extra = defaultExtra || (margin === true || value === true ? "margin" : "border");
+
+                return jQuery.access(this, function(elem, type, value) {
+                    var doc;
+
+                    if (jQuery.isWindow(elem)) {
+                        // As of 5/8/2012 this will yield incorrect results for Mobile Safari, but there
+                        // isn't a whole lot we can do. See pull request at this URL for discussion:
+                        // https://github.com/jquery/jquery/pull/764
+                        return elem.document.documentElement["client" + name];
+                    }
+
+                    // Get document width or height
+                    if (elem.nodeType === 9) {
+                        doc = elem.documentElement;
+
+                        // Either scroll[Width/Height] or offset[Width/Height] or client[Width/Height], whichever is greatest
+                        // unfortunately, this causes bug #3838 in IE6/8 only, but there is currently no good, small way to fix it.
+                        return Math.max(
+                            elem.body["scroll" + name], doc["scroll" + name], elem.body["offset" + name], doc["offset" + name], doc["client" + name]);
+                    }
+
+                    return value === undefined ?
+                    // Get width or height on the element, requesting but not forcing parseFloat
+                    jQuery.css(elem, type, extra) :
+
+                    // Set width or height on the element
+                    jQuery.style(elem, type, value, extra);
+                }, type, chainable ? margin : undefined, chainable, null);
+            };
+        });
+    });
+
     window.jQuery = window.$ = jQuery;
+
+    // Expose jQuery as an AMD module, but only for AMD loaders that
+    // understand the issues with loading multiple versions of jQuery
+    // in a page that all might call define(). The loader will indicate
+    // they have special allowances for multiple jQuery versions by
+    // specifying define.amd.jQuery = true. Register as a named module,
+    // since jQuery can be concatenated with other files that may use define,
+    // but not use a proper concatenation script that understands anonymous
+    // AMD modules. A named AMD is safest and most robust way to register.
+    // Lowercase jquery is used because AMD module names are derived from
+    // file names, and jQuery is normally delivered in a lowercase file name.
+    // Do this after creating the global so that if an AMD module wants to call
+    // noConflict to hide this version of jQuery, it will work.
+    if (typeof define === "function" && define.amd && define.amd.jQuery) {
+        define("jquery", [], function() {
+            return jQuery;
+        });
+    }
 
 })(window);
