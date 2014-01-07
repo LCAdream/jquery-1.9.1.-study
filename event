@@ -75,6 +75,8 @@ var rformElems = /^(?:input|select|textarea)$/i,
                     // 如果jQuery完成初始化且不存在e或者已经jQuery.event.trigger()了
                     // 返回派遣委托后的结果
                     // this指向eventHandle.elem，解决ie中注册事件this指向的问题
+                    // 如果是IE，这里使用attachEvent监听，其事件处理程序的第一个参数就有ie的event了。
+                    // 平时说的window.event是指在elem['on' + type] = handler;的情况
                     return typeof jQuery !== core_strundefined && (!e || jQuery.event.triggered !== e.type) ? jQuery.event.dispatch.apply(eventHandle.elem, arguments) :
                         undefined;
                 };
@@ -156,8 +158,9 @@ var rformElems = /^(?:input|select|textarea)$/i,
             // 防止IE内存泄露
             elem = null;
         },
-        // 分离元素的事件或者事件集
         /**
+         * 注销元素的事件或者事件集
+         *
          * 通过jQuery.event.remove实现，其执行过程大致如下：
          1. 现调用jQuery._data从缓存$.cache中取出elem对应的所有数组（内部数据，与调用jQuery.data存储的数据稍有不同
          2. 如果未传入types则移除所有事件句柄，如果types是命名空间，则移除所有与命名空间匹配的事件句柄
@@ -246,6 +249,20 @@ var rformElems = /^(?:input|select|textarea)$/i,
                 jQuery._removeData(elem, 'events');
             }
         },
+        /**
+         *
+         *
+         * 1.可触发自定义事件
+         * 2.触发原生事件处理程序
+         * 1）.通过jQuery定义的
+         * 2）.如果触发该类型事件都会触发elem[type]和elem['on' + type]方法，如果没有冒泡阻止，也会触发其他冒泡路径上的元素的ontype方法
+         *
+         * @param event
+         * @param data
+         * @param elem
+         * @param onlyHandlers
+         * @returns {*}
+         */
         trigger: function(event, data, elem, onlyHandlers) {
             var handle, ontype, cur,
                 bubbleType, special, tmp, i,
@@ -295,12 +312,13 @@ var rformElems = /^(?:input|select|textarea)$/i,
                 [event] :
                 jQuery.makeArray(data, [event]);
 
+            // 特殊的情况下的trigger
             special = jQuery.event.special[type] || {};
             if (!onlyHandlers && special.trigger && special.trigger.apply(elem, data) === false) {
                 return;
             }
 
-            // 决定事件冒泡优先路径，向上冒到document，然后到window；也可能是全局ownerDocument变量
+            // 保存冒泡时经过的元素到eventPath中，向上冒到document，然后到window；也可能是全局ownerDocument变量
             if (!onlyHandlers && !special.noBubble && !jQuery.isWindow(elem)) {
                 bubbleType = special.delegateType || type;
                 if (!rfocusMorph.test(bubbleType + type)) {
@@ -319,21 +337,23 @@ var rformElems = /^(?:input|select|textarea)$/i,
                 }
             }
 
-            // 在事件路径上触发处理程序
+            // 在事件路径上触发处理程序， 如果没有阻止冒泡就会遍历eventPath，
+            // 如果当前元素对应的事件类型有事件处理程序，就执行它，直到到最顶元素。
+            // 如果阻止，在第一次遍历后就不会再遍历了。
             i = 0;
             while ((cur = eventPath[i++]) && !event.isPropagationStopped()) {
                 event.type = i > 1 ?
                     bubbleType :
                     special.bindType || type;
 
-                // jQuery 处理程序
+                // jQuery 缓存中的处理程序
                 handle = (jQuery._data(cur, 'events') || {})[event.type] && jQuery._data(cur, 'handle');
                 // 如果有handle方法，执行它。这里的handle是元素绑定的事件
                 if (handle) {
                     handle.apply(cur, data);
                 }
 
-                // 原生处理程序
+                // 触发原生处理程序elem['on' + type]
                 handle = ontype && cur[ontype];
                 if (handle && jQuery.acceptData(cur) && handle.apply && handle.apply(cur, data) === false) {
                     event.preventDefault();
@@ -341,11 +361,20 @@ var rformElems = /^(?:input|select|textarea)$/i,
             }
             event.type = type;
 
-            // 如果没有阻止默认行为动作，立刻阻止
+            // 如果没有阻止默认行为动作，处理elem的type属性事件，
+            // 执行elem[type]处理程序但不会触发elem['on' + type]
             if (!onlyHandlers && !event.isDefaultPrevented()) {
+                // 1.
+                // 1）.没有special._default
+                // 2）.有special._default，该方法的执行结果返回false
+                // 2.
+                // type不能使click且elem不能使a标签
+                // 3.
+                // elem可接受缓存
                 if ((!special._default || special._default.apply(elem.ownerDocument, data) === false) && !(type === 'click' && jQuery.nodeName(elem, 'a')) && jQuery.acceptData(elem)) {
 
                     if (ontype && elem[type] && !jQuery.isWindow(elem)) {
+                        // 缓存older
                         tmp = elem[ontype];
 
                         // 当我们执行foo()时，不会重新触发onfoo事件
@@ -356,6 +385,7 @@ var rformElems = /^(?:input|select|textarea)$/i,
                         // 防止再次触发中的相同事件，第一次触发完后jQuery.event.triggered = undefined
                         jQuery.event.triggered = type;
                         try {
+                            // 执行方法
                             elem[type]();
                         } catch (e) {
                             // 隐藏元素在focus/blur时，ie9以下会奔溃
@@ -371,7 +401,15 @@ var rformElems = /^(?:input|select|textarea)$/i,
 
             return event.result;
         },
-        // 派遣委托事件
+        /**
+         * 派遣事件
+         * 创建jQuery的event对象来代理访问原生的event，
+         * 通过jQuery.event.handlers计算出委托事件处理队列handlerQueue（冒泡路径上的元素），没有委托则保存着当前元素和保存着其事件处理相关信息的对象handleObj。
+         * 遍历委托事件处理队列，再遍历事件处理数组，找到匹配的事件类型，如果有处理程序，就执行它。可以使用event.stopImmediatePropagation()来阻止遍历下一个事件处理数组项。如果当前元素的当前事件处理程序返回值是false或者内部使用了event.stopPropagation()。就不会遍历下一个冒泡路径上的元素了（即当前元素的父级上的元素）
+         * jQuery.event.special[event.type].preDispatch和jQuery.event.special[event.type].postDispatch分别是派遣事件开始和结束的钩子方法。
+         * @param event 原生event对象
+         * @returns {result|*}
+         */
         dispatch: function(event) {
             // 从原生event中创建jq的event
             event = jQuery.event.fix(event);
@@ -404,6 +442,7 @@ var rformElems = /^(?:input|select|textarea)$/i,
 
                 j = 0;
 
+                // 遍历当前元素的事件处理程序数组
                 while ((handleObj = matched.handlers[j++]) && !event.isImmediatePropagationStopped()) {
                     // 被触发的时间不能有命名空间或者有命名空间，且被绑定的事件是命名空间的一个子集
                     if (!event.namespace_re || event.namespace_re.test(handleObj.namespace)) {
@@ -567,7 +606,7 @@ var rformElems = /^(?:input|select|textarea)$/i,
                     body = eventDoc.body;
 
                     event.pageX = original.clientX + (doc && doc.scrollLeft || body && body.scrollLeft || 0) - (doc && doc.clientLeft || body && body.clientLeft || 0);
-                    event.pageY = original.clientY = (doc && doc.scrollTop || body && body.scrollTop || 0) - (doc && doc.clientTop || body && body.clientTop || 0);
+                    event.pageY = original.clientY + (doc && doc.scrollTop || body && body.scrollTop || 0) - (doc && doc.clientTop || body && body.clientTop || 0);
                 }
 
                 if (!event.relatedTarget && fromElement) {
@@ -688,7 +727,7 @@ var rformElems = /^(?:input|select|textarea)$/i,
             jQuery.extend(this, props);
         }
 
-        this.timestamp = src && src.timestamp || jQuery.now();
+        this.timeStamp = src && src.timeStamp || jQuery.now();
 
         this[jQuery.expando] = true;
     };
