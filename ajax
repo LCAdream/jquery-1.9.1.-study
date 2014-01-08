@@ -104,17 +104,7 @@ var r20 = /%20/g,
         }
     }
 
-    jQuery.each(("blur focus focusin focusout load resize scroll unload click dblclick " + "mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave " + "change select submit keydown keypress keyup error contextmenu").split(" "), function(i, name) {
-
-        // Handle event binding
-        jQuery.fn[name] = function(data, fn) {
-            return arguments.length > 0 ? this.on(name, null, data, fn) : this.trigger(name);
-        };
-    });
-
-    jQuery.fn.hover = function(fnOver, fnOut) {
-        return this.mouseenter(fnOver).mouseleave(fnOut || fnOver);
-    };
+    
 
     var
     // Document location
@@ -485,6 +475,8 @@ var r20 = /%20/g,
              * 数据转换器
              * 一个数据类型对数据类型转换器的对象。每个转换器的值是一个函数，返回响应的转化值
              * @type {Object}
+             *
+             * 策略模式，分离算法，选择实现。
              */
             converters: {
                 // Convert anything to text
@@ -583,6 +575,7 @@ var r20 = /%20/g,
                 strAbort = "canceled",
                 // Fake xhr
                 // 伪装的xhr对象
+                // 代理模式
                 jqXHR = {
                     readyState: 0,
                     // Builds headers hashtable if needed
@@ -635,6 +628,7 @@ var r20 = /%20/g,
                     },
 
                     // Status-dependent callbacks
+                    // 状态模式，封装状态对应的行为
                     statusCode: function(map) {
                         var code;
                         // 如果存在map对象
@@ -820,6 +814,7 @@ var r20 = /%20/g,
             }
 
             // Get transport
+            // 工厂方法，实现对应的对象
             transport = inspectPrefiltersOrTransports(transports, s, options, jqXHR);
 
             // If no transport, we auto-abort
@@ -992,6 +987,7 @@ var r20 = /%20/g,
 
             return jqXHR;
         },
+        // 适配
         getScript: function(url, callback) {
             return jQuery.get(url, undefined, callback, "script");
         },
@@ -1559,6 +1555,8 @@ var r20 = /%20/g,
                                         // If the request is local and we have data: assume a success
                                         // (success with no data won't get notified, that's the best we
                                         // can do given current implementations)
+                                        // 如果status为0且是本地请求且没跨域处理
+                                        // 强制将状态码改为200或404
                                         if (!status && s.isLocal && !s.crossDomain) {
                                             status = responses.text ? 200 : 404;
                                             // IE - #1450: sometimes returns 1223 when it should be 204
